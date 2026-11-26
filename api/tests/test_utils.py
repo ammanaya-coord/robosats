@@ -623,9 +623,14 @@ class ValidateActionSignatureTest(TestCase):
     def setUp(self):
         robot = MagicMock()
         robot.public_key = "pub_key_block"
+        robot.signs_actions_since = None
+        self.robot = robot
         patcher = patch("api.utils.Robot.objects.get", return_value=robot)
         patcher.start()
         self.addCleanup(patcher.stop)
+        mark_patcher = patch("api.utils.mark_robot_signs_actions")
+        self.mark = mark_patcher.start()
+        self.addCleanup(mark_patcher.stop)
 
     def _user(self):
         return MagicMock()
@@ -729,14 +734,53 @@ class ValidateActionSignatureTest(TestCase):
         self.assertTrue(valid)
         self.assertIsNone(error)
 
+    def test_disabled_flag_refuses_unsigned_once_robot_signed(self):
+        # While enforcement is off, a robot whose client has signed before is
+        # protected anyway: an unsigned write for it is a replayed bearer.
+        user = self._user()
+        self.robot.signs_actions_since = timezone.now()
+        with patch("api.utils.REQUIRE_SIGNED_ACTIONS", False):
+            valid, error = validate_action_signature(user, "confirm:1:alias", None)
+        self.assertFalse(valid)
+        self.assertEqual(error["error_code"], 1059)
+
+    def test_disabled_flag_still_verifies_present_signature(self):
+        user = self._user()
+        with (
+            patch("api.utils.REQUIRE_SIGNED_ACTIONS", False),
+            patch("api.utils.verify_signed_message", return_value=(False, None)),
+        ):
+            valid, error = validate_action_signature(user, "confirm:1:alias", "sig")
+        self.assertFalse(valid)
+        self.assertEqual(error["error_code"], 1048)
+        self.mark.assert_not_called()
+
+    def test_valid_signature_marks_robot_as_signing(self):
+        user = self._user()
+        with (
+            patch("api.utils.REQUIRE_SIGNED_ACTIONS", False),
+            patch(
+                "api.utils.verify_signed_message",
+                return_value=(True, "confirm:1:alias"),
+            ),
+        ):
+            valid, _ = validate_action_signature(user, "confirm:1:alias", "sig")
+        self.assertTrue(valid)
+        self.mark.assert_called_once_with(user)
+
 
 class ValidateSignedActionTimestampTest(TestCase):
     def setUp(self):
         robot = MagicMock()
         robot.public_key = "pub_key_block"
+        robot.signs_actions_since = None
+        self.robot = robot
         patcher = patch("api.utils.Robot.objects.get", return_value=robot)
         patcher.start()
         self.addCleanup(patcher.stop)
+        mark_patcher = patch("api.utils.mark_robot_signs_actions")
+        self.mark = mark_patcher.start()
+        self.addCleanup(mark_patcher.stop)
 
         alias_patcher = patch(
             "api.utils.get_federation_short_alias", return_value="robosats"
