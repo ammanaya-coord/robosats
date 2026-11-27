@@ -438,6 +438,22 @@ class TestUtils(TestCase):
         self.assertFalse(valid)
         self.assertIsNone(message)
 
+    def test_verify_signed_message_utf8(self):
+        # Clients sign UTF-8 text: a dispute statement in Portuguese, a typographic
+        # apostrophe or an emoji must verify, and come back unchanged.
+        with open("tests/robots/1/pub_key", "r") as file:
+            pub_key = file.read()
+        with open("tests/robots/1/signed_message_utf8", "r", encoding="utf-8") as file:
+            signed_message = file.read()
+
+        valid, message = verify_signed_message(pub_key, signed_message)
+
+        self.assertTrue(valid)
+        self.assertEqual(
+            message,
+            "Não recebi o pagamento — the seller’s reply never came. Déjà vu 🙂",
+        )
+
     def test_base91_to_hex(self):
         base91_str = "base91_string"
         with patch("api.utils.decode") as mock_decode:

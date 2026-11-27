@@ -631,6 +631,10 @@ def verify_signed_message(pub_key, signed_message):
     is valid (was made by the given pub_key) and the content of the message.
     """
     gpg = gnupg.GPG(gnupghome=config("GNUPG_DIR", default=None))
+    # Clients sign the UTF-8 bytes of the text. python-gnupg encodes str as
+    # latin-1 by default, so any accented character made a valid signature
+    # fail and any character outside latin-1 raised UnicodeEncodeError.
+    gpg.encoding = "utf-8"
 
     # import the public key
     import_result = gpg.import_keys(pub_key)
